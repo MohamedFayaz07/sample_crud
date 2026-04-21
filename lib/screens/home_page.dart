@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import 'login_page.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -6,7 +8,9 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<Map<String, dynamic>> records = [];
+  final AuthService _authService = AuthService();
+  List<dynamic> records = [];
+  bool isLoading = true;
 
   final List<String> itUsers = [
     "IT User 01",
@@ -15,92 +19,108 @@ class _HomePageState extends State<HomePage> {
     "IT User 04",
   ];
 
-  // Controllers
   final TextEditingController descController = TextEditingController();
-  String? selectedUser;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNotes();
+  }
+
+  Future<void> _fetchNotes() async {
+    setState(() => isLoading = true);
+    final result = await _authService.getNotes();
+    setState(() {
+      isLoading = false;
+      if (result['success'] == true) {
+        records = result['data'] ?? [];
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Fetch Error: ${result['message']}")),
+        );
+        if (result['message'].toString().contains('token')) {
+          _logout();
+        }
+      }
+    });
+  }
+
+  void _logout() async {
+    await _authService.logout();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => LoginPage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: Icon(Icons.arrow_back, color: Colors.black87),
-        title: Text(
-          "Home - CRUD Table",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: Text("Home - CRUD Table", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout, color: Colors.black87),
+            onPressed: _logout,
+          )
+        ],
       ),
-
-      // ---------------- Body ---------------- //
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Expanded(
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-                child: records.isEmpty
-                    ? Center(
-                  child: Text(
-                    "No Records Yet",
-                    style: TextStyle(fontSize: 16),
-                  ),
-                )
-                    : SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Container(
-                    width: MediaQuery.of(context).size.width,
-                    child: SingleChildScrollView(
-                      child: DataTable(
-                        columnSpacing: 30,
-                        headingRowColor: MaterialStateProperty.all(
-                            Colors.grey.shade200),
-                        columns: const [
-                          DataColumn(label: Text("ID")),
-                          DataColumn(label: Text("Description")),
-                          DataColumn(label: Text("User")),
-                          DataColumn(label: Text("Actions")),
-                        ],
-                        rows: List.generate(records.length, (index) {
-                          final r = records[index];
-                          return DataRow(
-                            cells: [
-                              DataCell(Text(r["id"].toString())),
-                              DataCell(Text(r["desc"])),
-                              DataCell(Text(r["user"])),
-                              DataCell(Row(
-                                children: [
-                                  IconButton(
-                                    icon: Icon(Icons.edit,
-                                        color: Colors.blue),
-                                    onPressed: () =>
-                                        _openEditDialog(index),
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.delete,
-                                        color: Colors.red),
-                                    onPressed: () =>
-                                        _deleteRecord(index),
-                                  ),
-                                ],
-                              )),
-                            ],
-                          );
-                        }),
-                      ),
+      body: isLoading
+          ? Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: Card(
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: records.isEmpty
+                          ? Center(child: Text("No Records Found", style: TextStyle(fontSize: 16)))
+                          : SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SingleChildScrollView(
+                                child: DataTable(
+                                  columnSpacing: 20,
+                                  headingRowColor: MaterialStateProperty.all(Colors.grey.shade200),
+                                  columns: const [
+                                    DataColumn(label: Text("ID")),
+                                    DataColumn(label: Text("Description")),
+                                    DataColumn(label: Text("User Type")),
+                                    DataColumn(label: Text("Actions")),
+                                  ],
+                                  rows: List.generate(records.length, (index) {
+                                    final r = records[index];
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(r["id"].toString())),
+                                        DataCell(Text(r["description"] ?? "")),
+                                        DataCell(Text(r["user_type"] ?? "")),
+                                        DataCell(Row(
+                                          children: [
+                                            IconButton(
+                                              icon: Icon(Icons.edit, color: Colors.blue),
+                                              onPressed: () => _openEditDialog(index),
+                                            ),
+                                            IconButton(
+                                              icon: Icon(Icons.delete, color: Colors.red),
+                                              onPressed: () => _deleteRecord(r["id"]),
+                                            ),
+                                          ],
+                                        )),
+                                      ],
+                                    );
+                                  }),
+                                ),
+                              ),
+                            ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
-
-      // ---------------- Add Button ---------------- //
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.blue,
         child: Icon(Icons.add),
@@ -109,119 +129,125 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ---------------- Add Dialog ---------------- //
   void _openAddDialog() {
     descController.clear();
-    selectedUser = null;
+    String? localSelectedUser;
 
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Add Record"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: descController,
-              decoration: InputDecoration(labelText: "Description"),
-            ),
-            SizedBox(height: 15),
-            DropdownButtonFormField(
-              decoration: InputDecoration(labelText: "Select User"),
-              value: selectedUser,
-              items: itUsers.map((u) {
-                return DropdownMenuItem(
-                  value: u,
-                  child: Text(u),
-                );
-              }).toList(),
-              onChanged: (value) {
-                selectedUser = value.toString();
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            child: Text("Cancel"),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            child: Text("Add"),
-            onPressed: () {
-              if (descController.text.isNotEmpty && selectedUser != null) {
-                setState(() {
-                  records.add({
-                    "id": records.length + 1,
-                    "desc": descController.text,
-                    "user": selectedUser,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text("Add Record"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: descController,
+                decoration: InputDecoration(labelText: "Description"),
+              ),
+              SizedBox(height: 15),
+              DropdownButtonFormField<String>(
+                decoration: InputDecoration(labelText: "Select User"),
+                value: localSelectedUser,
+                items: itUsers.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    localSelectedUser = value;
                   });
-                });
-                Navigator.pop(context);
-              }
-            },
+                },
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
-
-  // ---------------- Edit Dialog ---------------- //
-  void _openEditDialog(int index) {
-    descController.text = records[index]["desc"];
-    selectedUser = records[index]["user"];
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text("Edit Record"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: descController,
-              decoration: InputDecoration(labelText: "Description"),
-            ),
-            SizedBox(height: 15),
-            DropdownButtonFormField(
-              decoration: InputDecoration(labelText: "Select User"),
-              value: selectedUser,
-              items: itUsers.map((u) {
-                return DropdownMenuItem(
-                  value: u,
-                  child: Text(u),
-                );
-              }).toList(),
-              onChanged: (value) {
-                selectedUser = value.toString();
+          actions: [
+            TextButton(child: Text("Cancel"), onPressed: () => Navigator.pop(context)),
+            ElevatedButton(
+              child: Text("Add"),
+              onPressed: () async {
+                if (descController.text.isNotEmpty && localSelectedUser != null) {
+                  final result = await _authService.addNote(descController.text, localSelectedUser!);
+                  if (result['success']) {
+                    _fetchNotes();
+                    Navigator.pop(context);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Error: ${result['message']}")),
+                    );
+                  }
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("Please fill all fields")),
+                  );
+                }
               },
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            child: Text("Cancel"),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            child: Text("Update"),
-            onPressed: () {
-              setState(() {
-                records[index]["desc"] = descController.text;
-                records[index]["user"] = selectedUser;
-              });
-              Navigator.pop(context);
-            },
-          ),
-        ],
       ),
     );
   }
 
-  // ---------------- Delete Record ---------------- //
-  void _deleteRecord(int index) {
-    setState(() {
-      records.removeAt(index);
-    });
+  void _openEditDialog(int index) {
+    final record = records[index];
+    descController.text = record["description"] ?? "";
+    String? localSelectedUser = record["user_type"];
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text("Edit Record"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: descController,
+                decoration: InputDecoration(labelText: "Description"),
+              ),
+              SizedBox(height: 15),
+              DropdownButtonFormField<String>(
+                decoration: InputDecoration(labelText: "Select User"),
+                value: localSelectedUser,
+                items: itUsers.map((u) => DropdownMenuItem(value: u, child: Text(u))).toList(),
+                onChanged: (value) {
+                  setDialogState(() {
+                    localSelectedUser = value;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(child: Text("Cancel"), onPressed: () => Navigator.pop(context)),
+            ElevatedButton(
+              child: Text("Update"),
+              onPressed: () async {
+                if (descController.text.isNotEmpty && localSelectedUser != null) {
+                  final result = await _authService.updateNote(record["id"], descController.text, localSelectedUser!);
+                  if (result['success']) {
+                    _fetchNotes();
+                    Navigator.pop(context);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Error: ${result['message']}")),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _deleteRecord(int id) async {
+    final result = await _authService.deleteNote(id);
+    if (result['success']) {
+      _fetchNotes();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: ${result['message']}")),
+      );
+    }
   }
 }

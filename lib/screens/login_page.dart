@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import 'signup_page.dart';
 import 'home_page.dart';
 
@@ -10,18 +11,34 @@ class LoginPage extends StatefulWidget {
 class _LoginPageState extends State<LoginPage> {
   final email = TextEditingController();
   final password = TextEditingController();
+  final AuthService _authService = AuthService();
   String errorText = "";
+  bool isLoading = false;
 
-  void validateLogin() {
-    setState(() {
-      if (email.text.isEmpty || password.text.isEmpty) {
+  void validateLogin() async {
+    if (email.text.isEmpty || password.text.isEmpty) {
+      setState(() {
         errorText = "Please enter email & password";
-      } else {
-        errorText = "";
-        Navigator.push(
+      });
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+      errorText = "";
+    });
+
+    final result = await _authService.login(email.text, password.text);
+
+    setState(() {
+      isLoading = false;
+      if (result['success'] == true) {
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => HomePage()),
         );
+      } else {
+        errorText = result['message'] ?? "Login failed";
       }
     });
   }
@@ -67,8 +84,14 @@ class _LoginPageState extends State<LoginPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: validateLogin,
-                child: Text("Login"),
+                onPressed: isLoading ? null : validateLogin,
+                child: isLoading
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text("Login"),
               ),
             ),
 
